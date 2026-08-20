@@ -89,7 +89,7 @@
   }
   .device-btn.on{background:var(--cyan);color:#00232b;box-shadow:0 0 12px var(--cyan);}
 
-  /* Painel de Configurações */
+  /* Settings overlay */
   #overlay{
     position:fixed;inset:0;background:rgba(0,4,10,.92);
     display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
@@ -131,7 +131,7 @@
       <div class="ring r2"></div>
       <div class="core"></div>
     </div>
-    <div id="status">Toque no reator para iniciar</div>
+    <div id="status">Toque no reator para falar</div>
     <div id="console">Sistemas online, senhor.</div>
     <div class="devices" id="deviceRow"></div>
   </div>
@@ -151,7 +151,7 @@
       <div class="field">
         <label>Proxy URL (Cloudflare Worker - Opcional)</label>
         <input id="cfgProxy" placeholder="https://sinric-proxy.seunome.workers.dev">
-        <div class="hint">Necessário apenas se houver bloqueio de CORS no navegador. Deixe em branco se funcionar direto.</div>
+        <div class="hint">Necessário se o navegador bloquear requisições por CORS.</div>
       </div>
       <div class="field">
         <label>Device IDs (Sinric Pro)</label>
@@ -160,7 +160,6 @@
           <input id="cfgDev2" placeholder="Disp. 2">
           <input id="cfgDev3" placeholder="Disp. 3">
         </div>
-        <div class="hint">Identificador único do dispositivo no painel da Sinric Pro</div>
       </div>
       <div class="field">
         <label>Nomes dos dispositivos</label>
@@ -286,13 +285,13 @@ async function acionarDispositivo(numDispositivo, estadoLigado){
       renderDeviceRow();
       return `${nome} ${estadoLigado ? "ligado" : "desligado"}.`;
     }
-    return `Falha ao acionar ${nome}: ${data.message || "erro desconhecido"}.`;
+    return `Falha ao acionar ${nome}: ${data.message || "erro"}.`;
   }catch(e){
     return `Erro de conexão ao tentar acionar ${nome}.`;
   }
 }
 
-/* ---------- Gemini IA (Consultas Gerais & Fallback) ---------- */
+/* ---------- Gemini IA (Consultas & Fallback) ---------- */
 async function consultarGemini(pergunta){
   const reactor = document.getElementById("reactor");
   const statusEl = document.getElementById("status");
@@ -373,85 +372,59 @@ async function consultarGemini(pergunta){
     falar("Houve uma instabilidade na conexão, senhor.");
   }finally{
     reactor.classList.remove("thinking");
-    statusEl.innerText = "Diga 'Jarvis' ou toque no reator";
+    statusEl.innerText = "Toque no reator para falar";
   }
 }
 
-/* ---------- Reconhecimento de Voz & Wake Word Blindado ---------- */
+/* ---------- Reconhecimento de Voz Estável ---------- */
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
-let wakeActive = false;
-let wakeTimeout = null;
-let userInteracted = false;
+let isRecording = false;
 
 if (SpeechRecognition) {
   recognition = new SpeechRecognition();
   recognition.lang = "pt-BR";
-  recognition.continuous = false; // continuous = false evita travamento no Android
+  recognition.continuous = false;
   recognition.interimResults = false;
+
+  recognition.onstart = () => {
+    isRecording = true;
+    document.getElementById("reactor").classList.add("listening");
+    document.getElementById("status").innerText = "Ouvindo...";
+  };
 
   recognition.onresult = async (event) => {
     const transcript = event.results[0][0].transcript.trim().toLowerCase();
-    console.log("Detectado:", transcript);
-
-    const wakePatterns = ["jarvis", "olá jarvis", "ola jarvis", "hey jarvis", "ei jarvis", "ok jarvis"];
-    const containsWake = wakePatterns.some(w => transcript.includes(w));
-
-    if (!wakeActive && containsWake) {
-      ativarModoEscuta();
-      let cleanCmd = transcript;
-      wakePatterns.forEach(w => { cleanCmd = cleanCmd.replace(w, "").trim(); });
-      
-      if (cleanCmd.length > 2) {
-        tratarComando(cleanCmd);
-      }
-      return;
-    }
-
-    if (wakeActive) {
-      tratarComando(transcript);
-    }
+    console.log("Comando detectado:", transcript);
+    tratarComando(transcript);
   };
 
   recognition.onerror = (e) => {
     console.warn("Erro STT:", e.error);
-    if (e.error === "not-allowed") {
-      document.getElementById("status").innerText = "Permissão de microfone negada.";
-    }
+    encerrarSessaoVoz();
   };
 
   recognition.onend = () => {
-    if (userInteracted) {
-      setTimeout(() => {
-        try { recognition.start(); } catch (e) {}
-      }, 250);
-    }
+    encerrarSessaoVoz();
   };
 }
 
-function ativarModoEscuta() {
-  wakeActive = true;
-  document.getElementById("reactor").classList.add("listening");
-  document.getElementById("status").innerText = "Ouvindo comando...";
-  clearTimeout(wakeTimeout);
-  wakeTimeout = setTimeout(desativarModoEscuta, 6000);
-}
-
-function desativarModoEscuta() {
-  wakeActive = false;
-  clearTimeout(wakeTimeout);
+function encerrarSessaoVoz() {
+  isRecording = false;
   document.getElementById("reactor").classList.remove("listening");
-  document.getElementById("status").innerText = "Diga 'Jarvis' ou toque no reator";
+  document.getElementById("status").innerText = "Toque no reator para falar";
 }
 
-/* ---------- Interceptador Imediato (Zero Latência) ---------- */
-async function tratarComando(texto) {
-  desativarModoEscuta();
-  document.getElementById("console").innerText = `Você: "${texto}"`;
+/* ---------- Interceptador Imediato com Lógica Rigorosa Ligar/Desligar ---------- */
+async function tratarComando(textoBruto) {
+  const texto = textoBruto.toLowerCase();
+  document.getElementById("console").innerText = `Você: "${textoBruto}"`;
 
-  const ligar = texto.includes("ligar") || texto.includes("acender") || texto.includes("ativar");
-  const desligar = texto.includes("desligar") || texto.includes("apagar") || texto.includes("desativar");
+  // 1. Checa desligamento primeiro para evitar falso positivo com "ligar"
+  const querDesligar = texto.includes("desligar") || texto.includes("apagar") || texto.includes("desativar");
+  const querLigar = !querDesligar && (texto.includes("ligar") || texto.includes("acender") || texto.includes("ativar"));
 
+  // 2. Identifica qual dispositivo foi falado
   let dispositivoAlvo = null;
   [1, 2, 3].forEach(n => {
     const nome = (cfg["name" + n] || "").toLowerCase();
@@ -464,26 +437,36 @@ async function tratarComando(texto) {
     }
   });
 
-  // Executa localmente sem esperar IA se for comando de hardware
-  if ((ligar || desligar) && dispositivoAlvo) {
-    const estado = ligar;
+  // 3. Executa ação direta sem latência
+  if ((querLigar || querDesligar) && dispositivoAlvo) {
+    const estado = querLigar; // true = On, false = Off
     const nomeDisp = cfg["name" + dispositivoAlvo] || `Dispositivo ${dispositivoAlvo}`;
     
-    acionarDispositivo(dispositivoAlvo, estado);
+    const statusMsg = await acionarDispositivo(dispositivoAlvo, estado);
     const feedback = `${nomeDisp} ${estado ? "ligado" : "desligado"}, senhor.`;
-    document.getElementById("console").innerText = feedback;
+    document.getElementById("console").innerText = statusMsg;
     falar(feedback);
     return;
   }
 
-  // Envia perguntas gerais para a IA
-  consultarGemini(texto);
+  // 4. Se não for comando direto de automação, envia para o Gemini
+  consultarGemini(textoBruto);
 }
 
 function iniciarEscuta() {
-  userInteracted = true;
-  ativarModoEscuta();
-  try { recognition.start(); } catch(e) {}
+  if (!recognition) {
+    alert("Reconhecimento de voz não suportado neste navegador. Use o Google Chrome.");
+    return;
+  }
+  if (isRecording) {
+    recognition.stop();
+    return;
+  }
+  try {
+    recognition.start();
+  } catch (e) {
+    console.warn(e);
+  }
 }
 
 /* ---------- Inicialização ---------- */
