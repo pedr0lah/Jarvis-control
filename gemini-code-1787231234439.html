@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>J.A.R.V.I.S.</title>
+<style>
+  :root{
+    --bg:#03060c;
+    --bg2:#060e1a;
+    --cyan:#00e5ff;
+    --cyan-dim:#0a4a56;
+    --amber:#ffb454;
+    --red:#ff4d4d;
+    --text:#c9f3ff;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:radial-gradient(ellipse at center, var(--bg2) 0%, var(--bg) 70%);
+    color:var(--text);
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:space-between;
+    height:100vh;
+    overflow:hidden;
+    padding:24px 16px calc(24px + env(safe-area-inset-bottom));
+    user-select:none;
+  }
+  .topbar{
+    width:100%;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:0.72rem;
+    letter-spacing:2px;
+    color:var(--cyan-dim);
+    text-transform:uppercase;
+  }
+  .topbar .brand{color:var(--cyan);text-shadow:0 0 8px var(--cyan);font-weight:600;}
+  .gear{
+    width:34px;height:34px;border-radius:50%;
+    border:1px solid var(--cyan-dim);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--cyan);font-size:1rem;cursor:pointer;
+  }
+  .center{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:22px;
+    width:100%;
+  }
+  .reactor-wrap{position:relative;width:220px;height:220px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+  .ring{position:absolute;border-radius:50%;border:2px solid var(--cyan);opacity:.55;}
+  .ring.r1{width:220px;height:220px;border-style:dashed;animation:spin 14s linear infinite;}
+  .ring.r2{width:170px;height:170px;animation:spin 9s linear infinite reverse;opacity:.35;}
+  .core{
+    width:110px;height:110px;border-radius:50%;
+    background:radial-gradient(circle, var(--cyan) 0%, #062733 70%, transparent 100%);
+    box-shadow:0 0 40px var(--cyan), 0 0 90px rgba(0,229,255,.25) inset;
+    transition:box-shadow .25s ease, transform .25s ease;
+  }
+  .reactor-wrap.listening .core{animation:pulse 1s ease-in-out infinite;}
+  .reactor-wrap.thinking .ring{animation-duration:2.2s;}
+  .reactor-wrap.thinking .core{box-shadow:0 0 55px var(--amber);}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  @keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.08);}}
+  #status{font-size:1.05rem;letter-spacing:1px;text-shadow:0 0 8px var(--cyan);min-height:1.4em;}
+  #console{
+    font-size:0.85rem;color:#7fd3e6;max-width:92%;text-align:center;min-height:3.2em;line-height:1.5;
+  }
+  .devices{
+    display:flex;gap:10px;width:100%;justify-content:center;flex-wrap:wrap;
+  }
+  .device-btn{
+    border:1px solid var(--cyan-dim);
+    background:transparent;
+    color:var(--cyan);
+    padding:8px 14px;
+    border-radius:20px;
+    font-size:0.78rem;
+    letter-spacing:1px;
+    cursor:pointer;
+  }
+  .device-btn.on{background:var(--cyan);color:#00232b;box-shadow:0 0 12px var(--cyan);}
+
+  /* Settings panel */
+  #overlay{
+    position:fixed;inset:0;background:rgba(0,4,10,.92);
+    display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
+  }
+  #overlay.show{display:flex;}
+  .panel{
+    width:100%;max-width:420px;max-height:85vh;overflow-y:auto;
+    background:var(--bg2);border:1px solid var(--cyan-dim);border-radius:14px;padding:20px;
+  }
+  .panel h2{margin:0 0 14px;font-size:1rem;color:var(--cyan);letter-spacing:1px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:0.72rem;color:#7fd3e6;margin-bottom:4px;letter-spacing:0.5px;}
+  .field input{
+    width:100%;padding:9px 10px;border-radius:6px;border:1px solid var(--cyan-dim);
+    background:#02141c;color:var(--text);font-size:0.85rem;
+  }
+  .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .panel-actions{display:flex;gap:10px;margin-top:16px;}
+  .btn{
+    flex:1;padding:11px;border-radius:8px;border:none;font-size:0.85rem;font-weight:600;
+    letter-spacing:0.5px;cursor:pointer;
+  }
+  .btn-primary{background:var(--cyan);color:#00232b;}
+  .btn-ghost{background:transparent;border:1px solid var(--cyan-dim);color:var(--cyan);}
+  .hint{font-size:0.68rem;color:#4d7480;margin-top:2px;}
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <span class="brand">JARVIS</span>
+    <span id="clock">--:--</span>
+    <div class="gear" onclick="openSettings()">⚙</div>
+  </div>
+
+  <div class="center">
+    <div class="reactor-wrap" id="reactor" onclick="iniciarEscuta()">
+      <div class="ring r1"></div>
+      <div class="ring r2"></div>
+      <div class="core"></div>
+    </div>
+    <div id="status">Diga "Jarvis" ou toque no reator</div>
+    <div id="console">Sistemas online, senhor.</div>
+    <div class="devices" id="deviceRow"></div>
+  </div>
+
+  <!-- Settings overlay -->
+  <div id="overlay">
+    <div class="panel">
+      <h2>CONFIGURAÇÕES</h2>
+      <div class="field">
+        <label>Gemini API Key</label>
+        <input id="cfgGemini" placeholder="AIza...">
+      </div>
+      <div class="field">
+        <label>Sinric Pro API Key</label>
+        <input id="cfgSinric" placeholder="xxxxxxxx-xxxx-...">
+      </div>
+      <div class="field">
+        <label>Proxy URL (Cloudflare Worker)</label>
+        <input id="cfgProxy" placeholder="https://sinric-proxy.seunome.workers.dev">
+        <div class="hint">Necessário para contornar o bloqueio de CORS do navegador. Deixe em branco para chamar a Sinric Pro diretamente.</div>
+      </div>
+      <div class="field">
+        <label>Device IDs (Sinric Pro)</label>
+        <div class="row3">
+          <input id="cfgDev1" placeholder="Disp. 1">
+          <input id="cfgDev2" placeholder="Disp. 2">
+          <input id="cfgDev3" placeholder="Disp. 3">
+        </div>
+        <div class="hint">Nome opcional dos dispositivos abaixo</div>
+      </div>
+      <div class="field">
+        <label>Nomes dos dispositivos (opcional)</label>
+        <div class="row3">
+          <input id="cfgName1" placeholder="Lâmpada">
+          <input id="cfgName2" placeholder="Disp. 2">
+          <input id="cfgName3" placeholder="Disp. 3">
+        </div>
+      </div>
+      <div class="panel-actions">
+        <button class="btn btn-ghost" onclick="closeSettings()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveSettings()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+/* ---------- Persistência Local ---------- */
+const CFG_KEY = "jarvis_cfg_v1";
+function loadCfg(){
+  try{ return JSON.parse(localStorage.getItem(CFG_KEY)) || {}; }catch(e){ return {}; }
+}
+function saveCfgObj(cfg){ localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); }
+let cfg = loadCfg();
+
+function openSettings(){
+  document.getElementById("cfgGemini").value = cfg.gemini || "";
+  document.getElementById("cfgSinric").value = cfg.sinric || "";
+  document.getElementById("cfgProxy").value = cfg.proxy || "";
+  document.getElementById("cfgDev1").value = cfg.dev1 || "";
+  document.getElementById("cfgDev2").value = cfg.dev2 || "";
+  document.getElementById("cfgDev3").value = cfg.dev3 || "";
+  document.getElementById("cfgName1").value = cfg.name1 || "Dispositivo 1";
+  document.getElementById("cfgName2").value = cfg.name2 || "Dispositivo 2";
+  document.getElementById("cfgName3").value = cfg.name3 || "Dispositivo 3";
+  document.getElementById("overlay").classList.add("show");
+}
+function closeSettings(){ document.getElementById("overlay").classList.remove("show"); }
+function saveSettings(){
+  cfg = {
+    gemini: document.getElementById("cfgGemini").value.trim(),
+    sinric: document.getElementById("cfgSinric").value.trim(),
+    proxy: document.getElementById("cfgProxy").value.trim().replace(/\/$/, ""),
+    dev1: document.getElementById("cfgDev1").value.trim(),
+    dev2: document.getElementById("cfgDev2").value.trim(),
+    dev3: document.getElementById("cfgDev3").value.trim(),
+    name1: document.getElementById("cfgName1").value.trim() || "Dispositivo 1",
+    name2: document.getElementById("cfgName2").value.trim() || "Dispositivo 2",
+    name3: document.getElementById("cfgName3").value.trim() || "Dispositivo 3",
+  };
+  saveCfgObj(cfg);
+  renderDeviceRow();
+  closeSettings();
+  falar("Configurações salvas, senhor.");
+}
+
+/* ---------- Estado dos Dispositivos ---------- */
+let deviceState = {1:false, 2:false, 3:false};
+function renderDeviceRow(){
+  const row = document.getElementById("deviceRow");
+  row.innerHTML = "";
+  [1,2,3].forEach(n=>{
+    const id = cfg["dev"+n];
+    if(!id) return;
+    const btn = document.createElement("button");
+    btn.className = "device-btn" + (deviceState[n] ? " on" : "");
+    btn.innerText = cfg["name"+n] || ("Dispositivo "+n);
+    btn.onclick = (e)=>{ e.stopPropagation(); toggleDevice(n); };
+    row.appendChild(btn);
+  });
+}
+async function toggleDevice(n){
+  const novoEstado = !deviceState[n];
+  const msg = await acionarDispositivo(n, novoEstado);
+  document.getElementById("console").innerText = msg;
+}
+
+/* ---------- Relógio ---------- */
+function tickClock(){
+  const d = new Date();
+  document.getElementById("clock").innerText =
+    d.getHours().toString().padStart(2,"0")+":"+d.getMinutes().toString().padStart(2,"0");
+}
+setInterval(tickClock, 1000*15);
+tickClock();
+
+/* ---------- TTS (Voz) ---------- */
+function falar(texto){
+  const synth = window.speechSynthesis;
+  synth.cancel();
+  const u = new SpeechSynthesisUtterance(texto);
+  u.lang = "pt-BR";
+  u.pitch = 0.85;
+  u.rate = 1.05;
+  synth.speak(u);
+}
+
+/* ---------- Sinric Pro API (Ação Imediata) ---------- */
+async function acionarDispositivo(numDispositivo, estadoLigado){
+  const deviceId = cfg["dev"+numDispositivo];
+  const nome = cfg["name"+numDispositivo] || ("Dispositivo "+numDispositivo);
+  if(!deviceId || !cfg.sinric){
+    return "Faltam credenciais do Sinric Pro. Abra as configurações (⚙).";
+  }
+  const base = cfg.proxy ? cfg.proxy : "https://api.sinric.pro/api/v1";
+  const url = `${base}/devices/${deviceId}/action`;
+  try{
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "x-sinric-api-key": cfg.sinric,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        type: "request",
+        action: "setPowerState",
+        value: { state: estadoLigado ? "On" : "Off" }
+      })
+    });
+    const data = await resp.json();
+    if(data.success){
+      deviceState[numDispositivo] = estadoLigado;
+      renderDeviceRow();
+      return `${nome} ${estadoLigado ? "ligado" : "desligado"}.`;
+    }
+    return `Falha ao acionar ${nome}: ${data.message || "erro"}.`;
+  }catch(e){
+    return `Erro de conexão ao tentar acionar ${nome}.`;
+  }
+}
+
+/* ---------- Gemini (Consultas Gerais & Fallback) ---------- */
+async function consultarGemini(pergunta){
+  const reactor = document.getElementById("reactor");
+  const statusEl = document.getElementById("status");
+  const consoleEl = document.getElementById("console");
+
+  if(!cfg.gemini){
+    consoleEl.innerText = "Falta a Gemini API Key. Abra as configurações (⚙).";
+    falar("Ainda não configurei minha chave de acesso ao Gemini, senhor.");
+    return;
+  }
+
+  reactor.classList.remove("listening");
+  reactor.classList.add("thinking");
+  statusEl.innerText = "Processando...";
+  consoleEl.innerText = `Você disse: "${pergunta}"`;
+
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${cfg.gemini}`;
+  const nomesDispositivos = [1,2,3].map(n => `${n}: ${cfg["name"+n] || "Dispositivo "+n}`).join(", ");
+
+  const payload = {
+    system_instruction: {
+      parts: [{ text:
+        "Você é o JARVIS, assistente pessoal do usuário. Responda em português do Brasil, " +
+        "de forma concisa, inteligente e formal (use 'senhor'). " +
+        "Você pode responder dúvidas gerais e também controlar dispositivos residenciais " +
+        "usando a função acionar_dispositivo quando o usuário pedir para ligar/desligar algo. " +
+        "Dispositivos disponíveis (número: nome): " + nomesDispositivos + ". " +
+        "Se o usuário mencionar um dispositivo pelo nome, identifique o número correspondente."
+      }]
+    },
+    contents: [{ role: "user", parts: [{ text: pergunta }] }],
+    tools: [{
+      function_declarations: [{
+        name: "acionar_dispositivo",
+        description: "Liga ou desliga um dos dispositivos conectados via Sinric Pro / ESP32.",
+        parameters: {
+          type: "OBJECT",
+          properties: {
+            dispositivo: { type: "INTEGER", description: "Número do dispositivo: 1, 2 ou 3." },
+            ligar: { type: "BOOLEAN", description: "true para ligar, false para desligar." }
+          },
+          required: ["dispositivo", "ligar"]
+        }
+      }]
+    }]
+  };
+
+  try{
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if(data.error){
+      consoleEl.innerText = "Erro Gemini: " + data.error.message;
+      falar("Tive um problema ao consultar meus servidores de linguagem.");
+      return;
+    }
+
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    const funcCallPart = parts.find(p => p.functionCall);
+
+    if(funcCallPart){
+      const args = funcCallPart.functionCall.args;
+      const resultado = await acionarDispositivo(args.dispositivo, args.ligar);
+      consoleEl.innerText = resultado;
+      falar(resultado);
+    } else {
+      const textPart = parts.find(p => p.text);
+      const resposta = textPart ? textPart.text : "Não obtive uma resposta clara.";
+      consoleEl.innerText = resposta;
+      falar(resposta);
+    }
+  }catch(e){
+    consoleEl.innerText = "Erro de conexão com o Gemini.";
+    falar("Houve uma instabilidade na conexão, senhor.");
+  }finally{
+    reactor.classList.remove("thinking");
+    statusEl.innerText = "Diga 'Jarvis' ou toque no reator";
+  }
+}
+
+/* ---------- Sistema Wake Word & Reconhecimento Contínuo ---------- */
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let wakeActive = false;
+let wakeTimeout = null;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = "pt-BR";
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onresult = async (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+    console.log("Detectado:", transcript);
+
+    const wakePatterns = ["jarvis", "olá jarvis", "ola jarvis", "hey jarvis", "ei jarvis", "ok jarvis"];
+    const containsWake = wakePatterns.some(w => transcript.includes(w));
+
+    if (!wakeActive && containsWake) {
+      ativarModoEscuta();
+      let cleanCmd = transcript;
+      wakePatterns.forEach(w => { cleanCmd = cleanCmd.replace(w, "").trim(); });
+      
+      if (cleanCmd.length > 2) {
+        tratarComando(cleanCmd);
+      }
+      return;
+    }
+
+    if (wakeActive) {
+      tratarComando(transcript);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    console.warn("Erro no STT:", e.error);
+    if (e.error === "not-allowed") {
+      document.getElementById("status").innerText = "Permissão de microfone negada.";
+    }
+  };
+
+  recognition.onend = () => {
+    try { recognition.start(); } catch (e) {}
+  };
+}
+
+function ativarModoEscuta() {
+  wakeActive = true;
+  document.getElementById("reactor").classList.add("listening");
+  document.getElementById("status").innerText = "Ouvindo comando...";
+  clearTimeout(wakeTimeout);
+  wakeTimeout = setTimeout(desativarModoEscuta, 6000);
+}
+
+function desativarModoEscuta() {
+  wakeActive = false;
+  clearTimeout(wakeTimeout);
+  document.getElementById("reactor").classList.remove("listening");
+  document.getElementById("status").innerText = "Diga 'Jarvis' ou toque no reator";
+}
+
+/* ---------- Interceptador Imediato (Sem Latência) ---------- */
+async function tratarComando(texto) {
+  desativarModoEscuta();
+  document.getElementById("console").innerText = `Você: "${texto}"`;
+
+  const ligar = texto.includes("ligar") || texto.includes("acender") || texto.includes("ativar");
+  const desligar = texto.includes("desligar") || texto.includes("apagar") || texto.includes("desativar");
+
+  let dispositivoAlvo = null;
+  [1, 2, 3].forEach(n => {
+    const nome = (cfg["name" + n] || "").toLowerCase();
+    if (texto.includes(`dispositivo ${n}`) || texto.includes(`dispositivo ${n === 1 ? 'um' : n === 2 ? 'dois' : 'três'}`) || (nome && texto.includes(nome))) {
+      dispositivoAlvo = n;
+    }
+  });
+
+  if ((ligar || desligar) && dispositivoAlvo) {
+    const estado = ligar;
+    const nomeDisp = cfg["name" + dispositivoAlvo] || `Dispositivo ${dispositivoAlvo}`;
+    
+    acionarDispositivo(dispositivoAlvo, estado);
+    const feedback = `${nomeDisp} ${estado ? "ligado" : "desligado"}, senhor.`;
+    document.getElementById("console").innerText = feedback;
+    falar(feedback);
+    return;
+  }
+
+  consultarGemini(texto);
+}
+
+function iniciarEscuta() {
+  ativarModoEscuta();
+}
+
+/* ---------- Inicialização Automática ---------- */
+renderDeviceRow();
+window.addEventListener("DOMContentLoaded", () => {
+  try { recognition.start(); } catch(e) {}
+});
+
+if(!cfg.gemini || !cfg.sinric){
+  setTimeout(openSettings, 400);
+}
+</script>
+</body>
+</html>
