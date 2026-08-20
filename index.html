@@ -89,7 +89,7 @@
   }
   .device-btn.on{background:var(--cyan);color:#00232b;box-shadow:0 0 12px var(--cyan);}
 
-  /* Settings panel */
+  /* Painel de Configurações */
   #overlay{
     position:fixed;inset:0;background:rgba(0,4,10,.92);
     display:none;align-items:center;justify-content:center;z-index:50;padding:20px;
@@ -131,12 +131,12 @@
       <div class="ring r2"></div>
       <div class="core"></div>
     </div>
-    <div id="status">Diga "Jarvis" ou toque no reator</div>
+    <div id="status">Toque no reator para iniciar</div>
     <div id="console">Sistemas online, senhor.</div>
     <div class="devices" id="deviceRow"></div>
   </div>
 
-  <!-- Settings overlay -->
+  <!-- Modal de Configurações -->
   <div id="overlay">
     <div class="panel">
       <h2>CONFIGURAÇÕES</h2>
@@ -149,9 +149,9 @@
         <input id="cfgSinric" placeholder="xxxxxxxx-xxxx-...">
       </div>
       <div class="field">
-        <label>Proxy URL (Cloudflare Worker)</label>
+        <label>Proxy URL (Cloudflare Worker - Opcional)</label>
         <input id="cfgProxy" placeholder="https://sinric-proxy.seunome.workers.dev">
-        <div class="hint">Necessário para contornar o bloqueio de CORS do navegador. Deixe em branco para chamar a Sinric Pro diretamente.</div>
+        <div class="hint">Necessário apenas se houver bloqueio de CORS no navegador. Deixe em branco se funcionar direto.</div>
       </div>
       <div class="field">
         <label>Device IDs (Sinric Pro)</label>
@@ -160,14 +160,14 @@
           <input id="cfgDev2" placeholder="Disp. 2">
           <input id="cfgDev3" placeholder="Disp. 3">
         </div>
-        <div class="hint">Nome opcional dos dispositivos abaixo</div>
+        <div class="hint">Identificador único do dispositivo no painel da Sinric Pro</div>
       </div>
       <div class="field">
-        <label>Nomes dos dispositivos (opcional)</label>
+        <label>Nomes dos dispositivos</label>
         <div class="row3">
           <input id="cfgName1" placeholder="Lâmpada">
-          <input id="cfgName2" placeholder="Disp. 2">
-          <input id="cfgName3" placeholder="Disp. 3">
+          <input id="cfgName2" placeholder="Tomada">
+          <input id="cfgName3" placeholder="Ventilador">
         </div>
       </div>
       <div class="panel-actions">
@@ -247,7 +247,7 @@ function tickClock(){
 setInterval(tickClock, 1000*15);
 tickClock();
 
-/* ---------- TTS (Voz) ---------- */
+/* ---------- TTS (Voz de Resposta) ---------- */
 function falar(texto){
   const synth = window.speechSynthesis;
   synth.cancel();
@@ -258,7 +258,7 @@ function falar(texto){
   synth.speak(u);
 }
 
-/* ---------- Sinric Pro API (Ação Imediata) ---------- */
+/* ---------- Sinric Pro API ---------- */
 async function acionarDispositivo(numDispositivo, estadoLigado){
   const deviceId = cfg["dev"+numDispositivo];
   const nome = cfg["name"+numDispositivo] || ("Dispositivo "+numDispositivo);
@@ -286,13 +286,13 @@ async function acionarDispositivo(numDispositivo, estadoLigado){
       renderDeviceRow();
       return `${nome} ${estadoLigado ? "ligado" : "desligado"}.`;
     }
-    return `Falha ao acionar ${nome}: ${data.message || "erro"}.`;
+    return `Falha ao acionar ${nome}: ${data.message || "erro desconhecido"}.`;
   }catch(e){
     return `Erro de conexão ao tentar acionar ${nome}.`;
   }
 }
 
-/* ---------- Gemini (Consultas Gerais & Fallback) ---------- */
+/* ---------- Gemini IA (Consultas Gerais & Fallback) ---------- */
 async function consultarGemini(pergunta){
   const reactor = document.getElementById("reactor");
   const statusEl = document.getElementById("status");
@@ -377,20 +377,21 @@ async function consultarGemini(pergunta){
   }
 }
 
-/* ---------- Sistema Wake Word & Reconhecimento Contínuo ---------- */
+/* ---------- Reconhecimento de Voz & Wake Word Blindado ---------- */
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let wakeActive = false;
 let wakeTimeout = null;
+let userInteracted = false;
 
 if (SpeechRecognition) {
   recognition = new SpeechRecognition();
   recognition.lang = "pt-BR";
-  recognition.continuous = true;
+  recognition.continuous = false; // continuous = false evita travamento no Android
   recognition.interimResults = false;
 
   recognition.onresult = async (event) => {
-    const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+    const transcript = event.results[0][0].transcript.trim().toLowerCase();
     console.log("Detectado:", transcript);
 
     const wakePatterns = ["jarvis", "olá jarvis", "ola jarvis", "hey jarvis", "ei jarvis", "ok jarvis"];
@@ -413,14 +414,18 @@ if (SpeechRecognition) {
   };
 
   recognition.onerror = (e) => {
-    console.warn("Erro no STT:", e.error);
+    console.warn("Erro STT:", e.error);
     if (e.error === "not-allowed") {
       document.getElementById("status").innerText = "Permissão de microfone negada.";
     }
   };
 
   recognition.onend = () => {
-    try { recognition.start(); } catch (e) {}
+    if (userInteracted) {
+      setTimeout(() => {
+        try { recognition.start(); } catch (e) {}
+      }, 250);
+    }
   };
 }
 
@@ -439,7 +444,7 @@ function desativarModoEscuta() {
   document.getElementById("status").innerText = "Diga 'Jarvis' ou toque no reator";
 }
 
-/* ---------- Interceptador Imediato (Sem Latência) ---------- */
+/* ---------- Interceptador Imediato (Zero Latência) ---------- */
 async function tratarComando(texto) {
   desativarModoEscuta();
   document.getElementById("console").innerText = `Você: "${texto}"`;
@@ -450,11 +455,16 @@ async function tratarComando(texto) {
   let dispositivoAlvo = null;
   [1, 2, 3].forEach(n => {
     const nome = (cfg["name" + n] || "").toLowerCase();
-    if (texto.includes(`dispositivo ${n}`) || texto.includes(`dispositivo ${n === 1 ? 'um' : n === 2 ? 'dois' : 'três'}`) || (nome && texto.includes(nome))) {
+    if (
+      texto.includes(`dispositivo ${n}`) || 
+      texto.includes(`dispositivo ${n === 1 ? 'um' : n === 2 ? 'dois' : 'três'}`) || 
+      (nome && texto.includes(nome))
+    ) {
       dispositivoAlvo = n;
     }
   });
 
+  // Executa localmente sem esperar IA se for comando de hardware
   if ((ligar || desligar) && dispositivoAlvo) {
     const estado = ligar;
     const nomeDisp = cfg["name" + dispositivoAlvo] || `Dispositivo ${dispositivoAlvo}`;
@@ -466,19 +476,18 @@ async function tratarComando(texto) {
     return;
   }
 
+  // Envia perguntas gerais para a IA
   consultarGemini(texto);
 }
 
 function iniciarEscuta() {
+  userInteracted = true;
   ativarModoEscuta();
+  try { recognition.start(); } catch(e) {}
 }
 
-/* ---------- Inicialização Automática ---------- */
+/* ---------- Inicialização ---------- */
 renderDeviceRow();
-window.addEventListener("DOMContentLoaded", () => {
-  try { recognition.start(); } catch(e) {}
-});
-
 if(!cfg.gemini || !cfg.sinric){
   setTimeout(openSettings, 400);
 }
